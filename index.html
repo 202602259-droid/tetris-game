@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tetris Game</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;justify-content:center;align-items:center;background:linear-gradient(135deg,#10152b,#1e2a52);font-family:Arial,sans-serif;color:#fff}
+.game{display:flex;gap:22px;align-items:flex-start;padding:25px;background:rgba(255,255,255,.08);border-radius:18px;box-shadow:0 15px 50px rgba(0,0,0,.35)}
+h1{margin:0 0 12px;text-align:center;font-size:30px}.board-wrap{position:relative}.board{display:grid;grid-template-columns:repeat(10,30px);grid-template-rows:repeat(20,30px);gap:1px;background:#080b18;padding:5px;border-radius:8px}
+.cell{width:30px;height:30px;background:#151a31;border-radius:3px}.filled{box-shadow:inset 0 0 0 2px rgba(255,255,255,.18),0 0 8px rgba(255,255,255,.12)}
+.side{width:190px}.panel{background:rgba(0,0,0,.2);padding:14px;border-radius:12px;margin-bottom:12px}.label{font-size:13px;color:#b9c2e8;margin-bottom:4px}.value{font-size:24px;font-weight:bold}.next{display:grid;grid-template-columns:repeat(4,20px);grid-template-rows:repeat(4,20px);gap:2px;justify-content:center;margin:10px 0}.next div{width:20px;height:20px;background:#151a31;border-radius:2px}
+button{width:100%;padding:10px;border:0;border-radius:8px;background:#fff;color:#111;font-weight:bold;cursor:pointer;margin-top:7px}button:hover{opacity:.88}.controls{font-size:13px;line-height:1.8;color:#dce2ff}.status{text-align:center;font-weight:bold;min-height:20px;color:#ffd166}
+@media(max-width:650px){.game{transform:scale(.82);transform-origin:top center;margin-top:20px}.side{width:160px}}
+</style>
+</head>
+<body>
+<div class="game">
+<div><h1>🧱 TETRIS</h1><div id="board" class="board"></div></div>
+<div class="side">
+<div class="panel"><div class="label">SCORE</div><div id="score" class="value">0</div><div class="label">LINES</div><div id="lines" class="value">0</div></div>
+<div class="panel"><div class="label">NEXT</div><div id="next" class="next"></div></div>
+<div class="panel"><div class="controls"><b>Controls</b><br>← → Move<br>↓ Soft drop<br>↑ Rotate<br>Space Hard drop<br>P Pause<br>R Restart</div></div>
+<div id="status" class="status"></div><button id="restart">Restart</button>
+</div></div>
+<script>
+const W=10,H=20;
+const shapes=[
+[[1,1,1,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,1],[1,1]],
+[[0,1,1],[1,1,0]],[[0,1,0],[1,1,1]],[[1,1,0],[0,1,1]]
+];
+const colors=['#00d9ff','#4169e1','#ff9f1c','#ffd166','#2dd36f','#b967ff','#ef476f'];
+let board,piece,nextPiece,score,lines,gameOver,paused,dropTimer,lastTime;
+
+function newPiece(){
+ const type=Math.floor(Math.random()*shapes.length);
+ return {shape:shapes[type].map(r=>r.slice()),x:Math.floor((W-shapes[type][0].length)/2),y:0,color:colors[type]};
+}
+function reset(){
+ board=Array.from({length:H},()=>Array(W).fill(null)); piece=newPiece(); nextPiece=newPiece();
+ score=0;lines=0;gameOver=false;paused=false;dropTimer=0;lastTime=performance.now();
+ document.getElementById('status').textContent='';
+ draw(); drawNext();
+}
+function rotate(s){return s[0].map((_,i)=>s.map(r=>r[i]).reverse())}
+function collides(p,dx=0,dy=0,shape=p.shape){
+ for(let y=0;y<shape.length;y++)for(let x=0;x<shape[y].length;x++)if(shape[y][x]){
+  let nx=p.x+x+dx,ny=p.y+y+dy;
+  if(nx<0||nx>=W||ny>=H||(ny>=0&&board[ny][nx]))return true;
+ }return false;
+}
+function move(dx,dy){
+ if(paused||gameOver)return false;
+ if(!collides(piece,dx,dy)){piece.x+=dx;piece.y+=dy;draw();return true}
+ return false;
+}
+function rotatePiece(){
+ if(paused||gameOver)return;
+ const r=rotate(piece.shape), old=piece.shape; piece.shape=r;
+ if(collides(piece)) {piece.x--;if(collides(piece)) {piece.x+=2;if(collides(piece)){piece.x--;piece.shape=old}}}
+ draw();
+}
+function hardDrop(){
+ if(paused||gameOver)return;
+ let n=0;while(!collides(piece,0,1)){piece.y++;n++}score+=n*2;lock();
+}
+function lock(){
+ piece.shape.forEach((row,y)=>row.forEach((v,x)=>{if(v&&piece.y+y>=0)board[piece.y+y][piece.x+x]=piece.color}));
+ let cleared=0;
+ for(let y=H-1;y>=0;y--)if(board[y].every(Boolean)){board.splice(y,1);board.unshift(Array(W).fill(null));cleared++;y++}
+ if(cleared){lines+=cleared;score += [0,100,300,500,800][cleared] * Math.max(1,Math.floor(lines/10));}
+ piece=nextPiece;nextPiece=newPiece();
+ if(collides(piece)){gameOver=true;document.getElementById('status').textContent='GAME OVER'}
+ draw();drawNext();
+}
+function draw(){
+ const el=document.getElementById('board');el.innerHTML='';
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){const c=document.createElement('div');c.className='cell';c.style.background=board[y][x]||'';if(board[y][x])c.classList.add('filled');el.appendChild(c)}
+ if(piece&&!gameOver)piece.shape.forEach((row,y)=>row.forEach((v,x)=>{if(v&&piece.y+y>=0){const i=(piece.y+y)*W+piece.x+x;if(i>=0){const c=el.children[i];c.style.background=piece.color;c.classList.add('filled')}}}));
+ document.getElementById('score').textContent=score;document.getElementById('lines').textContent=lines;
+}
+function drawNext(){
+ const el=document.getElementById('next');el.innerHTML='';
+ for(let y=0;y<16;y++){const d=document.createElement('div');el.appendChild(d)}
+ nextPiece.shape.forEach((r,y)=>r.forEach((v,x)=>{if(v){const i=(y+1)*4+(x+1);if(el.children[i])el.children[i].style.background=nextPiece.color}}));
+}
+function loop(t){if(!paused&&!gameOver){dropTimer+=t-lastTime;if(dropTimer>Math.max(90,700-lines*8)){if(!move(0,1))lock();dropTimer=0}}lastTime=t;requestAnimationFrame(loop)}
+document.addEventListener('keydown',e=>{
+ if(['ArrowLeft','ArrowRight','ArrowDown','ArrowUp',' '].includes(e.key))e.preventDefault();
+ if(e.key==='ArrowLeft')move(-1,0);else if(e.key==='ArrowRight')move(1,0);else if(e.key==='ArrowDown'){if(move(0,1))score++}
+ else if(e.key==='ArrowUp')rotatePiece();else if(e.key===' ')hardDrop();
+ else if(e.key.toLowerCase()==='p'&&!gameOver){paused=!paused;document.getElementById('status').textContent=paused?'PAUSED':''}
+ else if(e.key.toLowerCase()==='r')reset();
+});
+document.getElementById('restart').onclick=reset;reset();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
